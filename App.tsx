@@ -6,7 +6,7 @@ import { translateText, generateSpeech } from './services/geminiService';
 import LanguageSelector from './components/LanguageSelector';
 import TextAreaCard from './components/TextAreaCard';
 import { HistoryList } from './components/History';
-import { SwapIcon, TranslateIcon } from './components/Icons';
+import { SwapIcon, TranslateIcon, KeyIcon } from './components/Icons';
 
 // Audio decoding utilities
 function decode(base64: string): Uint8Array {
@@ -33,7 +33,71 @@ async function decodeAudioData(
   return buffer;
 }
 
+
+interface ApiKeyModalProps {
+  onApiKeySubmit: (apiKey: string) => void;
+}
+
+const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onApiKeySubmit }) => {
+  const [apiKeyInput, setApiKeyInput] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (apiKeyInput.trim()) {
+      onApiKeySubmit(apiKeyInput.trim());
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 p-8 rounded-lg shadow-2xl max-w-md w-full border border-gray-700">
+        <h2 className="text-2xl font-bold text-white mb-4">Enter Your Gemini API Key</h2>
+        <p className="text-gray-400 mb-6">
+          To use this translator, please enter your Google Gemini API key. Your key will be saved locally in your browser for future use.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label htmlFor="apiKey" className="block text-sm font-medium text-gray-300 mb-2">
+              API Key
+            </label>
+            <input
+              type="password"
+              id="apiKey"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Enter your API key"
+              required
+              autoComplete="off"
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-gray-800 transition-colors"
+          >
+            Save and Continue
+          </button>
+        </form>
+        <p className="text-xs text-gray-500 mt-4 text-center">
+          You can get your API key from{' '}
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-indigo-400 hover:underline"
+          >
+            Google AI Studio
+          </a>
+          .
+        </p>
+      </div>
+    </div>
+  );
+};
+
+
 export default function App() {
+  const [apiKey, setApiKey] = useState<string | null>(null);
   const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES.find(l => l.name === 'English')!);
   const [targetLang, setTargetLang] = useState<Language>(LANGUAGES.find(l => l.name === 'Persian')!);
   const [tone, setTone] = useState<Tone>(TONES[1]); // Default to Formal
@@ -47,6 +111,17 @@ export default function App() {
   const [translationHistory, setTranslationHistory] = useState<TranslationHistoryItem[]>([]);
   
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    try {
+      const storedKey = localStorage.getItem('geminiApiKey');
+      if (storedKey) {
+        setApiKey(storedKey);
+      }
+    } catch (e) {
+      console.error("Failed to load API key from localStorage", e);
+    }
+  }, []);
 
   // Load history from localStorage on initial render
   useEffect(() => {
@@ -68,16 +143,30 @@ export default function App() {
       console.error("Failed to save history to localStorage", e);
     }
   }, [translationHistory]);
+  
+  const handleApiKeySubmit = (key: string) => {
+    localStorage.setItem('geminiApiKey', key);
+    setApiKey(key);
+  };
+
+  const handleChangeApiKey = () => {
+    if (window.confirm("Are you sure you want to remove your API key? You will need to enter it again to use the app.")) {
+      localStorage.removeItem('geminiApiKey');
+      setApiKey(null);
+      setError(null);
+    }
+  };
+
 
   const handleTranslate = useCallback(async () => {
-    if (!sourceText.trim()) return;
+    if (!sourceText.trim() || !apiKey) return;
 
     setIsLoading(true);
     setError(null);
     setTranslatedText('');
 
     try {
-      const result = await translateText(sourceText, sourceLang.name, targetLang.name, tone.value, selectedModel.id);
+      const result = await translateText(sourceText, sourceLang.name, targetLang.name, tone.value, selectedModel.id, apiKey);
       setTranslatedText(result);
 
       const newHistoryItem: TranslationHistoryItem = {
@@ -96,7 +185,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [sourceText, sourceLang, targetLang, tone, selectedModel]);
+  }, [sourceText, sourceLang, targetLang, tone, selectedModel, apiKey]);
 
   const handleSwapLanguages = () => {
     setSourceLang(targetLang);
@@ -106,7 +195,7 @@ export default function App() {
   };
 
   const playAudio = useCallback(async (text: string, type: 'source' | 'target') => {
-    if (!text.trim() || speakingTextType) return;
+    if (!text.trim() || speakingTextType || !apiKey) return;
 
     setSpeakingTextType(type);
     setError(null);
@@ -118,7 +207,7 @@ export default function App() {
       const audioContext = audioContextRef.current;
       await audioContext.resume();
 
-      const base64Audio = await generateSpeech(text, selectedVoice.id);
+      const base64Audio = await generateSpeech(text, selectedVoice.id, apiKey);
       const audioBytes = decode(base64Audio);
       const audioBuffer = await decodeAudioData(audioBytes, audioContext);
       
@@ -134,7 +223,7 @@ export default function App() {
       console.error(err);
       setSpeakingTextType(null);
     }
-  }, [speakingTextType, selectedVoice]);
+  }, [speakingTextType, selectedVoice, apiKey]);
 
   const handleReuseHistoryItem = (item: TranslationHistoryItem) => {
     setSourceLang(item.sourceLang);
@@ -153,14 +242,26 @@ export default function App() {
     setTranslationHistory([]);
   };
 
+  if (!apiKey) {
+    return <ApiKeyModal onApiKeySubmit={handleApiKeySubmit} />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
-        <header className="text-center mb-8">
+        <header className="text-center mb-8 relative">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-600">
             Gemini AI Translator
           </h1>
           <p className="mt-2 text-lg text-gray-400">Translate text and listen with the power of AI.</p>
+          <button 
+            onClick={handleChangeApiKey}
+            className="absolute top-0 right-0 p-2 text-gray-500 hover:text-indigo-400 transition-colors"
+            title="Change API Key"
+            aria-label="Change API Key"
+          >
+            <KeyIcon className="w-6 h-6" />
+          </button>
         </header>
 
         <main>

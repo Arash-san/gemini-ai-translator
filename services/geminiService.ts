@@ -1,20 +1,16 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable is not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export async function translateText(
   text: string,
   sourceLang: string,
   targetLang: string,
   tone: string,
   modelId: string,
+  apiKey: string,
 ): Promise<string> {
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const prompt = `
       You are an expert translator. Your task is to translate the given text accurately and naturally, considering the specified tone.
 
@@ -40,12 +36,16 @@ export async function translateText(
     return response.text.trim();
   } catch (error) {
     console.error("Error during translation:", error);
+    if (error instanceof Error && (error.message.includes('API key not valid') || error.message.includes('API_KEY_INVALID'))) {
+        throw new Error("The provided API key is not valid. Please check it and try again.");
+    }
     throw new Error("Failed to get translation from Gemini API.");
   }
 }
 
-export async function generateSpeech(text: string, voiceId: string): Promise<string> {
+export async function generateSpeech(text: string, voiceId: string, apiKey: string): Promise<string> {
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: text }] }],
@@ -66,6 +66,9 @@ export async function generateSpeech(text: string, voiceId: string): Promise<str
     return base64Audio;
   } catch (error) {
     console.error("Error generating speech:", error);
+    if (error instanceof Error && (error.message.includes('API key not valid') || error.message.includes('API_KEY_INVALID'))) {
+        throw new Error("The provided API key is not valid. Please check it and try again.");
+    }
     throw new Error("Failed to generate speech from Gemini API.");
   }
 }
