@@ -1,0 +1,5 @@
+{
+  "name": "Gemini AI Translator",
+  "description": "A powerful translation application that uses Gemini to translate text between languages, adjust the tone of the translation, and generate speech for both the source and translated text.",
+  "requestFramePermissions": []
+}
